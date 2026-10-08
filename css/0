@@ -1,0 +1,376 @@
+const rpPanel = document.getElementById('chat-rp-panel');
+const rpCloseBtn = document.getElementById('chat-rp-close');
+const rpNameEl = document.getElementById('rp-partner-name');
+const rpQixiTag = document.getElementById('rp-qixi-tag');
+const rpQixiSection = document.getElementById('rp-qixi-section');
+const rpRandVal = document.getElementById('rp-rand-val');
+const rpCustomInput = document.getElementById('rp-custom');
+const rpWishInput = document.getElementById('rp-wish');
+const rpSendBtn = document.getElementById('rp-send-btn');
+const rpSettingsBtn = document.getElementById('rp-settings-btn');
+const rpSettings = document.getElementById('rp-settings');
+const rpSettingsDone = document.getElementById('rp-settings-done');
+const rpScrollEl = rpPanel ? rpPanel.querySelector('.poke-card-scroll') : null;
+let rpSide = 'out';
+let rpPickedAmt = null;
+function openRpSettings() {
+  if (!rpSettings) return;
+  if (window.csRpSettingsSync) { try { window.csRpSettingsSync(); } catch (e) {} }
+  if (rpBalanceEl) rpBalanceEl.hidden = true;
+  if (rpScrollEl) rpScrollEl.hidden = true;
+  rpSettings.hidden = false;
+}
+function closeRpSettings() {
+  rpSettings.hidden = true;
+  if (rpBalanceEl) rpBalanceEl.hidden = false;
+  if (rpScrollEl) rpScrollEl.hidden = false;
+}
+rpPanel.querySelectorAll('.rp-side').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    rpSide = btn.dataset.rpside || 'out';
+    rpPanel.querySelectorAll('.rp-side').forEach(b => b.classList.toggle('sel', b === btn));
+    rpRenderCover();  // 封面跟着收款方切
+  });
+});
+rpPanel.querySelectorAll('.rp-amt').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const v = btn.dataset.rpamt;
+    if (v === 'rand') {
+      const r = Math.round(Math.random() * 20000 + 1) / 100;   // 0.01~200.00 元
+      rpPickedAmt = r;
+      if (rpRandVal) rpRandVal.textContent = '本次随机：¥' + r.toFixed(2);
+      if (rpCustomInput) rpCustomInput.value = '';
+      ...
+    }
+    rpPickedAmt = parseFloat(v);
+    ...
+  });
+});
+const RP_WALLET_KEY = 'gift-wallet';
+const RP_LEGACY_WALLET_KEY = 'rp-wallet';
+const RP_WALLET_DEFAULT_FEN = 52000;  // 520 元
+
+function rpWalletGet() {
+  if (typeof window.giftWalletGet === 'function') return window.giftWalletGet();
+  try {
+    const w = JSON.parse(store.get(RP_WALLET_KEY) || '');
+    if (typeof w.myBalance === 'number' && typeof w.systemBalance === 'number') {
+      // 兼容旧脏值（99999999）
+      if (w.myBalance === 99999999 && w.systemBalance === 99999999) {
+        const nw = { myBalance: RP_WALLET_DEFAULT_FEN, systemBalance: RP_WALLET_DEFAULT_FEN };
+        store.set(RP_WALLET_KEY, JSON.stringify(nw));
+        return nw;
+      }
+      return w;
+    }
+  } catch (e) {}
+  // 旧键迁移
+  let seed = { myBalance: RP_WALLET_DEFAULT_FEN, systemBalance: RP_WALLET_DEFAULT_FEN };
+  try {
+    const o = JSON.parse(store.get(RP_LEGACY_WALLET_KEY) || '');
+    if (typeof o.myBalance === 'number' && typeof o.systemBalance === 'number') seed = { ... };
+  } catch (e) {}
+  store.set(RP_WALLET_KEY, JSON.stringify(seed));
+  return seed;
+}
+function rpWalletSet(w) {
+  if (typeof window.giftWalletSet === 'function') { window.giftWalletSet(w); return; }
+  store.set(RP_WALLET_KEY, JSON.stringify(w));
+}
+function rpEditWallet() {
+  ...
+  let side = 'my';
+  let doneAny = false;
+  const hintTxt = () => { /* 当前余额 + 状态提示 */ };
+  let ctl = null;
+  ctl = window.openModal('向 Tears 充值心意币', '', (arg) => {
+    const picked = (arg === 'my' || arg === 'ta');
+    const el = document.getElementById('modal-input');
+    const raw = String(picked ? ((el && el.value) || '') : (arg == null ? '' : arg)).trim();
+    const target = picked ? arg : side;
+    if (raw === '') return;   // 留空确定 = 结束
+    const n = parseFloat(raw);
+    if (isNaN(n) || n <= 0) { toast('充值金额需大于 0'); return; }
+    const fen = Math.round(n * 100);
+    const w = rpWalletGet();
+    if (target === 'my') w.myBalance += fen;
+    else w.systemBalance += fen;
+    rpWalletSet(w); rpRenderBalance();
+    // 记主页申请流水
+    try { if (window.giftCoinLedgerAdd) window.giftCoinLedgerAdd('ask', target === 'my' ? fen : 0, target === 'ta' ? fen : 0, '聊天申请'); } catch (e) {}
+    toast('Tears 已收款，' + LBL[target] + ' +¥' + fmtYuan(fen / 100));
+    doneAny = true;
+    // 自动切到另一边（方便连续给双方都申请）
+    side = target === 'my' ? 'ta' : 'my';
+    if (ctl) {
+      ctl.stay();
+      const pbs = document.querySelectorAll('#modal-pills .pill');
+      const flip = pbs[side === 'my' ? 0 : 1];
+      if (flip) flip.click();   // 同步胶囊高亮
+      ctl.text('');
+      ctl.hint(hintTxt());
+      ctl.okText('完成');
+    }
+  }, { ... });
+}
+function rpStatusText(rec) {
+  const st = rec.rpStatus || 'pending';
+  if (st === 'received') return '已领取';
+  if (st === 'expired') return '已过期·退回';
+  if (st === 'returned') return '已退回';
+  return rec.side === 'out' ? (window.taFit ? window.taFit('待TA领取') : '待TA领取') : '待领取';
+}
+function rpStatusCls(rec) {
+  const st = rec.rpStatus || 'pending';
+  if (st === 'received') return 'opened';
+  if (st === 'expired' || st === 'returned') return 'expired';
+  return '';
+}
+function rpPatchStatusInPlace(idx) {
+  const rec = msgs[idx];
+  if (!rec || rec.special !== 'redpacket') return false;
+  if (!body) return false;
+  const el = body.querySelector('.msg-rp[data-idx="' + idx + '"]');
+  if (!el) return false;
+  const card = el.querySelector('.msg-rp-card');
+  if (!card) return false;
+  card.classList.remove('opened', 'expired');
+  const cls = rpStatusCls(rec);
+  if (cls) card.classList.add(cls);
+  const st = card.querySelector('.msg-rp-status');
+  if (st) st.textContent = rpStatusText(rec);
+  return true;
+}
+function trySystemAutoSend() {
+  // #1256 每日上限（0=不限）
+  const rpMax = rpDailyMax();
+  if (rpMax > 0 && rpDailyCount() >= rpMax) return;
+
+  // 概率：读 cs-rp-auto-prob（每联系人独立，默认 4%）
+  let baseRate = 0.04;
+  try {
+    const ap = window.activeStore ? window.activeStore().get('cs-rp-auto-prob') : null;
+    const pv = parseFloat(ap);
+    if (pv !== null && isFinite(pv)) baseRate = Math.max(0, Math.min(100, pv)) / 100;
+  } catch (e) {}
+
+  // 扣款（可透支为负）
+  const wallet = rpWalletGet();
+  wallet.systemBalance -= amtFen;
+  rpWalletSet(wallet);
+  rpDailyIncr();
+
+  // 延迟落地（带同桌面守卫）
+  const myCid = window.__activeCid || 'default';
+  setTimeout(() => {
+    if ((window.__activeCid || 'default') !== myCid) return;
+    addIn('', {
+      special: 'redpacket',
+      rateAllow: true,     // #1341 限流豁免（钱已扣）
+      rpAmount: amt / 100,
+      rpWish: wish,
+      rpStatus: 'pending',
+      rpTs: Date.now(),
+      rpCover: rpCoverGet('in') ? 1 : 0
+    });
+    if (window.logFish) window.logFish();
+  }, randInt(800, 2000));
+}
+function trySystemAskMochi() {
+  if (window.nightModeActive && window.nightModeActive()) return;
+  if (rateLimitFull()) return;
+  const askMax = rpAskDailyMax();
+  if (askMax > 0 && askDailyCount() >= askMax) return;
+  if (Math.random() >= rpAskProbRate()) return;
+  const amtFen = genRpAmount(5200000);
+  if (amtFen < 1) return;
+  askDailyIncr();
+  const wallet = rpWalletGet();
+  wallet.systemBalance += amtFen;   // 入 TA 账
+  rpWalletSet(wallet);
+  // 主页申请流水
+  try { if (window.giftCoinLedgerAdd) window.giftCoinLedgerAdd('ask', 0, amtFen, 'TA自动申请'); } catch (e) {}
+  const myCid = window.__activeCid || 'default';
+  setTimeout(() => {
+    if ((window.__activeCid || 'default') !== myCid) return;
+    addRec({ side: 'in', special: 'askcoin', rateAllow: true, askFen: amtFen, askTs: Date.now() });
+    saveMsgsNow();   // 立即落盘
+  }, randInt(800, 2400));
+}
+function rpAskProbRate() {
+  let v = NaN;
+  try { v = parseFloat(store.get('cs-rp-ask-prob')); } catch (e) {}
+  if (isFinite(v)) return Math.max(0, Math.min(100, v)) / 100;
+  // 回退旧存钱罐全局根键
+  try {
+    const p = JSON.parse((window.xyStore('xy-home-v2')).get('piggy-coin-prob') || 'null');
+    if (p && typeof p.ask === 'number') return Math.max(0, Math.min(1, p.ask));
+  } catch (e) {}
+  return 0.04;
+}
+const rpCard = e.target.closest('.msg-rp-card');
+if (rpCard) {
+  if (rpPressSuppressClick) { rpPressSuppressClick = false; return; }  // 长按退回
+  e.stopPropagation();
+  const rpItem = rpCard.closest('.msg-rp');
+  if (!rpItem || rpItem.dataset.idx === undefined) return;
+  const rpShownEl = rpItem.querySelector('.msg-rp-status');
+  const rpShown = rpShownEl ? rpShownEl.textContent : '';
+  // #1477 身份校正：同身份多份取与卡片显示一致那份
+  const rpHit = msgRecFromEl(rpItem, function (m) { return rpStatusText(m) === rpShown; });
+  if (!rpHit) return;
+  const rpIdx = rpHit.idx;
+  const rpRec = rpHit.rec;
+  if (!rpRec || rpRec.special !== 'redpacket') return;
+  if ((rpRec.rpStatus || 'pending') !== 'pending') return;
+  if (rpRec.side === 'out') { toast(...'等待 TA 领取'); return; }
+
+  rpRec.rpStatus = 'received';
+  rpRec.rpOpenedAt = Date.now();
+  const wallet = rpWalletGet();
+  wallet.myBalance += Math.round((rpRec.rpAmount || 0) * 100);
+  rpWalletSet(wallet);
+  saveMsgsNow();
+
+  const amtTxt = '（心意币 ¥' + Number(rpRec.rpAmount || 0).toFixed(2) + '）';
+  // #517 用户要求：领取不再弹黑色提示浮层（卡片状态 + poke 留痕已足够）
+  if (!rpPatchStatusInPlace(rpIdx)) renderWindow(true, true);
+  setTimeout(() => addIn('你领取了红包' + amtTxt, { special: 'poke', nightAllow: true, rateAllow: true }), randInt(400, 1000));
+  // #807 领后捎一句话（我领 TA 方向）
+  setTimeout(() => rpCollectFeedback('in'), randInt(1100, 2200));
+  return;
+}
+body.addEventListener('pointerdown', (e) => {
+  const rpCard = e.target.closest('.msg-rp-card');
+  if (!rpCard) return;
+  ...
+  rpPressTimer = setTimeout(() => {
+    rpPressTimer = null;
+    rpPressSuppressClick = true;
+    if (window.openModal) {
+      window.openModal('退回这个红包？', '', () => {
+        rpRec.rpStatus = 'returned';
+        const w = rpWalletGet();
+        w.systemBalance += Math.round((rpRec.rpAmount || 0) * 100);  // 退回 TA 账
+        rpWalletSet(w);
+        saveMsgsNow();
+        if (!rpPatchStatusInPlace(msgs.indexOf(rpRec))) renderWindow(true, true);
+        const amtTxt = '（心意币 ¥' + ... + '）';
+        setTimeout(() => addIn('你退回了红包' + amtTxt, { special: 'poke', nightAllow: true, rateAllow: true }), randInt(300, 800));
+      }, { okText: '退回', cancelText: '取消' });
+    }
+  }, 500);
+});
+function handleSendResponse(msg) {
+  const idx = msgs.indexOf(msg);
+  if (idx < 0) return;
+  const rec = msgs[idx];
+  if (!rec || rec.rpStatus !== 'pending') return;
+  const myCid = window.__activeCid || 'default';
+  const r = Math.random();
+  const wallet = rpWalletGet();
+  const amtFen = Math.round((rec.rpAmount || 0) * 100);
+
+  if (r < 0.2) {
+    // 20% 退回
+    rec.rpStatus = 'returned';
+    wallet.myBalance += amtFen;   // 退回我账
+    rpWalletSet(wallet);
+    saveMsgsNow();
+    if (!rpPatchStatusInPlace(idx)) renderWindow(false, true);
+    setTimeout(() => { if (...) return; addIn('TA 退回了你的红包（...）', { special: 'poke', ... }); }, randInt(500, 1200));
+  } else if (r < 0.9) {
+    // 70% 领取
+    rec.rpStatus = 'received';
+    rec.rpOpenedAt = Date.now();
+    wallet.systemBalance += amtFen;
+    rpWalletSet(wallet);
+    saveMsgsNow();
+    if (!rpPatchStatusInPlace(idx)) renderWindow(false, true);
+    const amtTxt = '（心意币 ¥' + ... + '）';
+    setTimeout(() => { if (...) return; addIn('TA 领取了你的红包' + amtTxt, { special: 'poke', ... }); }, randInt(400, 1000));
+    rpCollectFeedback('out');   // 我发的红包被 TA 领走 → TA 搭话
+  }
+  // r >= 0.9：10% 一直未领取，等 tryCollectPending / rpExpireCheck
+}
+function tryCollectPending() {
+  if (Math.random() >= 0.08) return;
+  const idx = msgs.findIndex(m => m && m.special === 'redpacket' && m.side === 'out' && m.rpStatus === 'pending');
+  if (idx < 0) return;
+  const rec = msgs[idx];
+  rec.rpStatus = 'received';
+  ...
+}
+const RP_EXPIRY_MS = 24 * 60 * 60 * 1000;
+function rpExpireCheck() {
+  const now = Date.now();
+  const wallet = rpWalletGet();
+  let changed = false;
+  for (let i = 0; i < msgs.length; i++) {
+    const rec = msgs[i];
+    if (rec && rec.special === 'redpacket' && rec.rpStatus === 'pending' && rec.rpTs) {
+      if (now - rec.rpTs > RP_EXPIRY_MS) {
+        rec.rpStatus = 'expired';
+        rec.expiredAt = now;
+        const amtFen = Math.round((rec.rpAmount || 0) * 100);
+        if (rec.side === 'out') wallet.myBalance += amtFen;    // 我发的退回我账
+        else wallet.systemBalance += amtFen;                    // TA 发的退回 TA 账
+        changed = true;
+      }
+    }
+  }
+  if (changed) { rpWalletSet(wallet); saveMsgsNow(); }
+}
+const RP_SPECIAL_FEN = [520, 5200, 52000, 520000, 1314, 131400];
+// 5.2/52/520/5200/13.14/1314 元
+
+function genRpAmount(systemBalanceFen) {
+  let amt;
+  if (Math.random() < 0.4) {
+    // 20% 走特殊金额（520/1314 系）
+    amt = RP_SPECIAL_FEN[Math.floor(Math.random() * RP_SPECIAL_FEN.length)];
+  } else if (Math.random() < 0.8) {
+    // 20% * 80% = 32% 走 1~min(52000元, systemBalance) 均匀随机
+    const max = Math.min(5200000, systemBalanceFen);
+    amt = Math.floor(Math.random() * max) + 1;
+  } else {
+    // 20% 走 1~systemBalance 均匀随机
+    amt = Math.floor(Math.random() * systemBalanceFen) + 1;
+  }
+  return Math.min(amt, systemBalanceFen);
+}
+function rpCoverKey(side) { return 'rp-cover-' + (side || 'out'); }
+function rpCoverGet(side) { return store.get(rpCoverKey(side)) || ''; }
+function rpCoverSet(side, dataUrl) {
+  const k = rpCoverKey(side);
+  if (dataUrl) {
+    store.set(k, dataUrl);
+    try { if (window.idbSet) window.idbSet(window.activePrefix() + ':' + k, dataUrl); } catch (e) {}
+  } else {
+    try { store.remove(k); } catch (e) {}
+    try { if (window.idbSet) window.idbSet(window.activePrefix() + ':' + k, ''); } catch (e) {}
+  }
+}
+try {
+  if (window.idbGet) {
+    ['out', 'in'].forEach(function (side) {
+      const myPrefix = window.activePrefix();
+      window.idbGet(myPrefix + ':rp-cover-' + side).then(function (v) {
+        if (window.activePrefix() !== myPrefix) return;
+        if (v && typeof v === 'string' && v.length > 2) store.set('rp-cover-' + side, v);
+      });
+    });
+  }
+} catch (e) {}
+function rpCompressCover(src) {
+  if (!window.mochiImgCompressTo) return Promise.resolve(null);
+  return window.mochiImgCompressTo(src, { maxSide: 400, quality: 0.8, tag: 'rp-cover' });
+}
+window.openRpPanel / closeRpPanel     // call.js 直达
+window.csRpSettingsSync                // chat-settings.js 调用（一次刷新五行）
+window.rpAskProbRate / rpAskDailyMax   // chat-settings.js 读写
+window.csRpSyncProb / csRpSyncMax / csRpSyncAskProb / csRpSyncAskMax / csRpSyncThx
+                                       // 各行 sync 函数（chat-settings.js 注册）
+window.chatRateLimitFull               // #1341 只读探针（gift-shop 自动送礼同用）

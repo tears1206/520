@@ -1,0 +1,94 @@
+/* ============================================================
+ * mochi-bridge.css —— 新版 mochi-main 样式接入 milk-main 的「变量桥」
+ *
+ * 背景：新加入的 4 个样式文件（mochi-tabbar / mochi-chat-core / mochi-pages / mochi-gift）
+ *       本身不定义任何 :root 变量，却引用了 69 个变量，其中 60 个 milk-main 从未定义
+ *       → 若不桥接，这些规则里凡是 var() 的取值都会失效（背景透明、字色异常等）。
+ * 做法：把新版的变量名映射到 milk-main 现有调色板；JS 驱动的那几个（--cs-*）给中性默认，
+ *       运行时由模块（群聊美化）自己覆盖。
+ * 加载顺序：styles → home → home-shell → 4 个新版文件 → 本文件（放最后，变量照样生效）
+ * ============================================================ */
+:root {
+    /* 主题色 */
+    --accent: var(--accent-color);
+    --accent-rgb: var(--accent-color-rgb);
+    --conf: 1;
+    /* 卡片与背景 */
+    --card-bg: var(--secondary-bg);
+    --static-bg: var(--primary-bg);
+    --glass-bg: rgba(255, 255, 255, .72);
+    --bg-a: var(--primary-bg);
+    --bg-b: var(--secondary-bg);
+    /* 文字 */
+    --soft-ink: var(--text-secondary);
+    --hint-ink: var(--text-secondary);
+    --ink-soft: var(--text-secondary);
+    --typing-ink: var(--text-secondary);
+    --pill-border: var(--border-color);
+    /* 输入 */
+    --input-bg: var(--primary-bg);
+    --input-border: var(--border-color);
+    --input-focus-border: var(--accent-color);
+    --send-bg: var(--accent-color);
+    --send-ink: #fff;
+    /* 消息气泡 */
+    --msg-in-bg: var(--secondary-bg);
+    --msg-in-ink: var(--text-primary);
+    --msg-out-bg: var(--accent-color);
+    --msg-out-ink: #fff;
+    --msg-time-ink: var(--text-secondary);
+    --msg-time-dx: 6px;
+    --msg-time-dy: 2px;
+    --msg-mark-x: 0px;
+    --msg-mark-y: 0px;
+    /* 聊天排版 */
+    --chat-bubble-radius: 16px;
+    --chat-bubble-pad: 10px 14px;
+    --chat-font-size: 14px;
+    --chat-ph-ink: var(--text-secondary);
+    --chat-ph-visibility: 1;
+    /* 底部导航（新版 .tabbar 依赖） */
+    --tabbar-radius: 18px;
+    --tabbar-bg-color: var(--secondary-bg);
+    --tabbar-bg-a: 1;                /* 不透明度系数（新版用于 color-mix 百分比），不是颜色 */
+    --tabbar-base-bg: var(--secondary-bg);
+    --tabbar-blur: 12px;
+    --tabbar-ico-size: 24px;
+    --tabbar-ico-a: 1;
+    /* 深色/危险色 */
+    --dark-border: rgba(255, 255, 255, .12);
+    --dark-border-12: rgba(255, 255, 255, .12);
+    --dark-soft: rgba(255, 255, 255, .06);
+    --dark-hover: rgba(255, 255, 255, .1);
+    --dark-card-92: rgba(28, 30, 36, .92);
+    --danger-ink: #e0574a;
+    --danger-soft: rgba(224, 87, 74, .12);
+    /* 安全区 / 尺寸小工具 */
+    --mochi-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --mochi-ios-h: 0px;
+    --mgm-fs: 13px;
+    --gk-win-i: 1;
+    /* 群聊「聊天表面」不透明度：运行时由 group-chat 模块用 JS 覆盖 */
+    --cs-: 1;
+    --cs-bar-rgb: 255, 255, 255;
+    --cs-bg-h: 0;
+    --cs-head-opacity: .92;
+    --cs-head-opacity-ink: 0;
+    --cs-input-opacity: .92;
+    --cs-input-opacity-ink: 0;
+    --cs-head-inset: 0px;
+    --cs-input-inset: 0px;
+    --cs-input-mb-base: 0px;
+    --cs-in-surface: var(--secondary-bg);
+    --cs-out-surface: var(--accent-color);
+}
+
+/* 底部导航：新版样式挂在 .tab 上，而 milk-main 原有类名是 .tab-item。
+   标记里两个类都带上（class="tab tab-item"），这里再兜一层别名，防止只写 .tab-item 的元素没样式。 */
+.tabbar .tab-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    cursor: pointer;
+}

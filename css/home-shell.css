@@ -1,0 +1,682 @@
+/* ===== home-shell.css：主页（情侣空间桌面）外壳 =====
+   职责边界：组件长相一律留在 home.css；本文件只补 home.css「假设外部已存在」的东西
+   （#page-phone 尺寸、#phone-bg-layer 定位、状态栏/tabbar、视图切换、主题变量桥接）。
+
+   ⚠️ 铁律：不要给聊天页（.header / .main-chat-area / 它们的祖先）加
+      opacity / visibility / display / pointer-events 之类的隐藏手段。
+      原因：index.html 里 .main-chat-area 开标签之后从未闭合，全部弹窗
+      （.modal，z-index 2000）在真实 DOM 里都是它的后代 —— 隐藏它 = 桌面上
+      点「设置/心晴手账」弹出来的窗一起消失或点不动。
+      本方案靠 #page-phone 是不透明的覆盖层（z-index:70）把聊天页盖住，够用且零副作用。 */
+
+/* ---------- 1. 变量桥接：home.css 用了 --ink/--muted 但自己没定义 ---------- */
+:root {
+  --ink: var(--text-primary);        /* 桌面文字跟随聊天主题 */
+  --muted: var(--text-secondary);
+  --card-border: var(--border-color);
+  --msg-av-radius: 50%;              /* .deco-avatar .ring 用它 */
+  /* home.css #562 的意图：桌面按钮跟随「主题色」。这两个变量 styles.css 里没有，定义安全 */
+  --btn-bg: var(--accent-color);
+  --btn-ink: #fff;
+}
+
+/* ---------- 2. 桌面外壳：固定覆盖层，z=70 ----------
+   z 序已核实：.header 10 < .input-area-wrapper 50 < 桌面 70 < .desk-msg 89 < .modal 2000 */
+#page-phone {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;            /* 必须：home.css 的 .desktop-pages{flex:1} 要有可分配高度 */
+  overflow: hidden;
+  background: var(--primary-bg);     /* 必须不透明，否则聊天页会透出来 */
+  border-radius: 0;                  /* .phone-bg-mask 用 border-radius:inherit 跟着它 */
+}
+
+/* 宽屏/模拟器上做成手机壳（真机全屏无圆角）。不需要这段就整块删掉 */
+@media (min-width: 901px) {
+  #page-phone {
+    inset: 12px;
+    border-radius: 34px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .22);
+  }
+}
+
+/* ---------- 3. 壁纸层：home.css 只给了 transform:translateZ(0)，定位由这里补 ---------- */
+#phone-bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;                        /* home.css #219：遮罩在 z2，壁纸必须在 z1 */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;                        /* 未设壁纸时不占纹理（对齐 home.css 的省显存口径） */
+  transition: opacity .3s ease;
+  pointer-events: none;
+}
+#page-phone.has-wallpaper #phone-bg-layer { opacity: 1; }
+
+/* ---------- 4. 状态栏 / 底部 tab（home.css 只在注释里提过它们是 z2 同层，样式缺） ---------- */
+.statusbar, .tabbar {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: .5px;
+}
+.statusbar {
+  justify-content: space-between;
+  height: calc(26px + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 18px 0;
+}
+.statusbar-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.statusbar-icons { opacity: .75; font-size: 11px; }
+
+.tabbar {
+  justify-content: center;
+  gap: 30px;
+  height: calc(54px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--widget-border);
+  background: var(--widget-bg);
+}
+.tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-item i { font-size: 17px; }
+.tab-item.active { color: var(--accent-color); }
+
+/* ---------- 5. 桌面内容区：给 home.css 的 .dots（absolute）一个定位参照 ---------- */
+.desk-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;                     /* 关键：不加它 .desktop-pages{flex:1} 会塌成 0 高 */
+  display: flex;
+  flex-direction: column;
+}
+/* home.css 把 .phone-bg-mask 提到了 z-index:2；同层时「DOM 序靠后者胜」——
+   所以桌面页与圆点必须显式 z-index:2 且排在遮罩之后，否则白色遮罩会盖住图标 */
+#page-phone > .desk-body > .desktop-pages,
+#page-phone > .desk-body > .dots {
+  position: relative;
+  z-index: 2;
+}
+
+/* home.css 的 .app-ico svg{stroke:var(--ink)} 只覆盖 stroke 型 SVG，
+   这里补 Font Awesome 图标（<i>）的尺寸与颜色 */
+.app .app-ico i { font-size: 22px; color: var(--ink); }
+
+/* ---------- 6. 视图切换：只切覆盖层的显隐，聊天页 DOM 一个字节都不动 ---------- */
+body.view-home #page-phone { display: flex; }
+/* 传讯视图不再整层隐藏 #page-phone —— 聊天页就在它内部，整层隐藏会把聊天页一起藏掉；
+   正确做法见文件后半段：只隐藏桌面自己的图层（.desk-body/.tabbar/.dots/背景层）。 */
+
+/* 主页时收掉会穿层的浮层（沉浸模式退出按钮 z-index:9999 会飘在桌面上） */
+body.view-home #immersive-exit-btn { display: none !important; }
+
+/* ---------- 7. 关闭「底部栏收纳」功能（应要求删除输入框上方那行收纳面板） ----------
+   index.html 里的 #collapsed-extras-panel（7 个按钮的面板）与 #collapse-expand-btn（⌃ 展开）
+   已删除。但 listeners.js 启动时会读存档里的 settings.bottomCollapseMode，
+   若它仍是 true，就会给 body 挂 .bottom-collapse-mode，从而把附件/表情/批量三个按钮
+   按 `body.bottom-collapse-mode .collapse-hideable{display:none!important}` 永久隐藏，
+   而展开按钮又已被删掉 = 再也找不回来。这里补一条兜底：那几个按钮始终显示。 */
+body.bottom-collapse-mode .collapse-hideable { display: flex !important; }
+body.bottom-collapse-mode #collapse-expand-btn { display: none !important; }
+
+/* ===== 收藏（独立页 #page-fav，从「消息统计」弹窗里拆出来） ===== */
+#page-fav{position:fixed;top:0;right:0;bottom:0;left:0;z-index:82;display:flex;flex-direction:column;background:var(--primary-bg);
+    overflow-y:auto;padding:calc(12px + env(safe-area-inset-top,0px)) 14px calc(16px + env(safe-area-inset-bottom,0px));}
+#page-fav[hidden]{display:none !important;}
+.fav-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-shrink:0;}
+.fav-title{flex:1;font-size:15px;font-weight:700;color:var(--text-primary);text-align:center;}
+.fav-tbtn{flex-shrink:0;font-size:12px;padding:5px 11px;border:1px solid var(--border-color);border-radius:99px;
+    background:var(--primary-bg);color:var(--text-primary);cursor:pointer;font-family:inherit;}
+#page-fav .favorites-list{flex:1;min-height:0;max-height:none;overflow-y:auto;}
+/* 收藏页的两个分页（我的收藏 / 他的收藏） */
+.fav-tabs{display:flex;gap:6px;margin:2px 0 12px;flex-shrink:0;}
+.fav-tab{flex:1;padding:8px 0;font-size:12px;border:1px solid var(--border-color);border-radius:10px;
+    background:var(--primary-bg);color:var(--text-secondary);cursor:pointer;font-family:inherit;}
+.fav-tab.active{background:var(--accent-color);color:#fff;border-color:var(--accent-color);}
+.fav-pane{flex:1;min-height:0;display:flex;flex-direction:column;}
+.fav-pane[hidden]{display:none !important;}
+.fav-mine-extra{margin-top:12px;border-top:1px dashed var(--border-color);padding-top:10px;}
+#fav-ta-list{display:flex;flex-direction:column;gap:8px;}
+/* ===== 兼容：自建全屏页用显式四边偏移（旧内核不认 inset 简写 → 会只显示半屏） ===== */
+#page-home, #page-feed, #page-feed-all, #page-feed-friends, #page-fav,
+#call-mask, #avlib-card, #page-chatcard {
+    top: 0; right: 0; bottom: 0; left: 0;
+}
+/* ===== 桌面层不透明兜底（修「主页只显示半屏、下半屏透出传讯页」） =====
+   现象根因：桌面 #page-phone 靠 background:var(--primary-bg) 盖住下面的聊天页；
+   若该规则因媒体查询/优先级/变量未定义而失效，桌面下半段就会透明，把传讯内容透出来。
+   这里用最高优先级 + 颜色兜底，保证桌面永远不透明、且占满整屏。 */
+html body #page-phone {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100vh !important;
+    z-index: 70 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    background: var(--primary-bg, #f9f9f9) !important;
+    background-color: var(--primary-bg, #f9f9f9) !important;
+}
+html body #page-phone > .desk-body { flex: 1 1 auto !important; min-height: 0 !important; }
+html body #page-phone > .statusbar,
+html body #page-phone > .tabbar { flex: 0 0 auto !important; }
+/* ===== 修「桌面下半屏透出传讯页」：桌面视图下隐藏聊天页的底部 UI =====
+   病根：body.bottom-collapse-mode 下，聊天页的输入栏 / 折叠扩展面板（#collapse-expand-btn、
+   #collapsed-extras-panel）等底部元素会以更高的层叠顺序画在桌面层（z=70）之上，
+   于是桌面底部被"盖"出一条传讯内容。桌面视图下它们本就不该出现，这里直接隐藏；
+   切回传讯（body.view-chat）时自动恢复。 */
+body.view-home .input-area-wrapper,
+body.view-home #collapsed-extras-panel,
+body.view-home #collapse-expand-btn,
+body.view-home #collapsed-extras-panel .collapsed-extras-inner {
+    display: none !important;
+}
+/* ===== 修「桌面底部透出传讯」第二版：bottom-collapse-mode 的折叠头部也一并隐藏 =====
+   截图确认：该模式下聊天头部（梦角/我的头像 + 「在线」状态）与 7 键扩展面板会折叠到页面下方，
+   层叠顺序高于桌面层（z=70），于是透在桌面底部。桌面视图下它们本就不该出现。 */
+body.view-home .header,
+body.view-home .header-wrapper,
+body.view-home #chat-header,
+body.view-home #collapsed-extras-panel,
+body.view-home .collapsed-extras-inner,
+body.view-home #collapse-expand-btn {
+    display: none !important;
+}
+/* ===== 传讯整屏切换 + 消除桌面底部空白（不搬动 DOM 的稳妥方案） =====
+   背景：index.html 未闭合导致 #page-phone 里还包着 header / .main-chat-area。
+   ① 桌面视图下让聊天页【不占 flex 布局空间】（否则会在桌面底部留下一条空白/透出内容），
+      但仍留在层内、被桌面盖住（保留它原本依赖的父级布局，不动 DOM）。
+   ② 切到传讯视图时【隐藏桌面层】，露出整屏聊天页。 */
+body.view-home #page-phone > .desk-body {
+    position: relative;
+    z-index: auto;                    /* 不压住聊天页：聊天页里的弹窗/页面必须在桌面之上可用 */
+}
+body.view-home #page-phone > .header,
+body.view-home #page-phone > .main-chat-area {
+    position: absolute;
+    top: 0; right: 0; bottom: 0; left: 0;
+    z-index: 3;                       /* 脱离 flex 流：不占位、不留空白；
+                                         必须高于桌面背景遮罩 #phone-bg-mask(z=2)，
+                                         否则聊天页层里的弹窗会被那张遮罩盖住 → 表现为"点了打不开" */
+    visibility: hidden;               /* 桌面视图下不可见（也不可点） */
+}
+/* 传讯视图：只隐藏「桌面自己的图层」，聊天页（它是 #page-phone 的后代）照常显示并占满。
+   注意：绝不能整个隐藏 #page-phone —— 聊天页在它内部，会一起被藏掉。 */
+body.view-chat #page-phone > .desk-body,
+body.view-chat #page-phone > .tabbar,
+body.view-chat #page-phone > .dots,
+body.view-chat #page-phone > #phone-bg-layer,
+body.view-chat #page-phone > #phone-bg-mask {
+    display: none !important;
+}
+/* 注意：不要在这里把 #page-phone 变透明 —— 整层透明会让聊天页里的模糊/阴影大量重绘合成，
+   在低配机器上表现为「一打开传讯就卡死」。桌面图层已 display:none，保留不透明背景即可。 */
+body.view-chat #page-phone > .header,
+body.view-chat #page-phone > .main-chat-area {
+    position: static !important;
+    visibility: visible !important;
+    display: flex !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+}
+/* ===== 传讯页顶部卡片锁死（不再随消息滚动） =====
+   顶部卡片（.ann-header-card，纪念日/情侣卡）原本是 position:relative 的普通块，
+   被放进聊天流后就会跟着消息一起滚走。这里用 sticky 把它钉在滚动容器顶部；
+   在其它容器（如纪念日设置弹窗）里 sticky 不生效、表现与原来一致，零副作用。 */
+body.view-chat .ann-header-card,
+body.view-chat #ann-header-card,
+body.view-chat .main-chat-area > .chat-top-card,
+body.view-chat .main-chat-area > .top-card {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 40 !important;
+}
+/* 聊天头部本身也确保不参与消息区滚动 */
+body.view-chat #page-phone > .header {
+    position: relative !important;
+    z-index: 30 !important;
+    flex-shrink: 0 !important;
+}
+/* ===== 桌面两个头像放大（用户要求 2026-10-05） =====
+   home.css 的基准是 80px；此前为「与传讯页顶部头像一致」压到 48px，用户觉得偏小，
+   这里放大一档到 64px（脚本写入的内联尺寸仍被 !important 压住），并把兜底图标按比例放大；
+   其它同步位（通话/朋友圈等）不受影响，各自保持原有大小。 */
+#love-av-partner, #love-av-me {
+    width: 64px !important;
+    height: 64px !important;
+    min-width: 64px;
+    min-height: 64px;
+    flex: 0 0 auto;
+}
+#love-av-partner i, #love-av-me i { font-size: 30px; }
+/* ===== 桌面视图：隐藏聊天内容，但聊天页里的「弹窗 / 我的页面」必须保持可见可点 =====
+   背景：index.html 未闭合 → 所有 .modal、#page-* 都嵌在 .main-chat-area 里面。
+   所以不能只写 visibility:hidden 了事（会把弹窗一起藏掉，表现为"图标点了没反应"）。
+   visibility 可被子元素重新打开，这里把弹窗类元素显式恢复，功能不受影响。 */
+body.view-home #page-phone > .main-chat-area {
+    visibility: hidden !important;
+}
+body.view-home #page-phone > .main-chat-area .modal,
+body.view-home #page-phone > .main-chat-area [id^="page-"],
+body.view-home #page-phone > .main-chat-area .call-mask,
+body.view-home #page-phone > .main-chat-area #avlib-card,
+body.view-home #page-phone > .main-chat-area #tc-mask,
+body.view-home #page-phone > .main-chat-area #img-view-mask,
+/* 用户反馈（2026-10-05）：心晴手账里点某一天弹出的「每日心情」编辑层不是 .modal，
+   于是被聊天层那条 visibility:hidden 一起藏住了 —— 只有在传讯页（聊天层可见）才看得到。
+   实测结构是 body.view-home > .main-chat-area > .mood-selector-overlay（聊天层直接挂在 body 下），
+   所以两种父级写法都写上；它自身 position:fixed / z-index:2100，层级不成问题。 */
+body.view-home .main-chat-area .mood-selector-overlay,
+body.view-home #page-phone > .main-chat-area .mood-selector-overlay {
+    visibility: visible !important;
+}
+/* ===== 桌面视图：把背景遮罩/背景层降到最底，避免盖住聊天页层里的弹窗 ===== */
+body.view-home #page-phone > #phone-bg-mask,
+body.view-home #page-phone > #phone-bg-layer {
+    z-index: 0 !important;
+}
+/* 传讯视图：背景层/遮罩彻底退出合成（display:none 而非仅隐藏） */
+body.view-chat #page-phone > #phone-bg-layer,
+body.view-chat #page-phone > #phone-bg-mask {
+    display: none !important;
+}
+/* ===== 传讯视图：用后代选择器强制聊天页可见并撑满（不再依赖直接子级结构） =====
+   原因：index.html 未闭合 → .header / .main-chat-area 的实际嵌套层级不确定，
+   直接子级选择器会漏匹配，表现为"切到传讯一片空白"。后代选择器无论嵌多深都能命中。 */
+/* 注意：这里绝不能写 position !important ——
+   否则会压掉 JS 在切视图时写的内联 position:fixed，z-index 就失效，
+   聊天页会被桌面层那不透明的白色背景盖住（表现为空白页）。 */
+body.view-chat .header,
+body.view-chat #chat-header {
+    visibility: visible !important;
+    display: flex !important;
+}
+body.view-chat .main-chat-area {
+    visibility: visible !important;
+    display: flex !important;
+    opacity: 1 !important;
+}
+/* 桌面视图：聊天页隐藏（弹窗与我的页面保持可用） */
+body.view-home .main-chat-area { visibility: hidden !important; }
+body.view-home .main-chat-area .modal,
+body.view-home .main-chat-area [id^="page-"],
+body.view-home .main-chat-area .call-mask,
+body.view-home .main-chat-area #avlib-card,
+body.view-home .main-chat-area #tc-mask { visibility: visible !important; }
+/* 桌面图层在传讯视图一律让位 */
+body.view-chat .desk-body,
+body.view-chat .tabbar,
+body.view-chat .dots,
+body.view-chat #phone-bg-layer,
+body.view-chat #phone-bg-mask { display: none !important; }
+
+/* ===== red-packet panel layout (dsh) ===== */
+/* 新版红包面板 #chat-rp-panel 沿用 .poke-card 的「底部半框」限高规则：
+      .poke-card        { max-height: 48% }      ← 面板最高只有半屏
+      .poke-card-scroll { max-height: 40vh }     ← 内容区又被压到 40vh
+   两条限高叠加，加上 .poke-card-scroll 隐藏了滚动条（scrollbar-width:none），
+   面板就变成「只显示一半、下面还有内容却看不出来」（用户反馈：红包只显示了一半）。
+   这里放开设限：面板按内容自然长高，最高 86vh；真的超出时才在面板内部滚动，
+   并显示细滚动条。位置仍贴在输入栏上方（沿用新版 bottom:96px 的锚点）。 */
+#chat-rp-panel{
+    top: auto !important;
+    bottom: calc(96px + var(--mochi-safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
+    height: auto !important;
+    max-height: 86vh !important;
+    min-height: 0 !important;
+    z-index: 2650 !important;
+}
+#chat-rp-panel .poke-card-scroll{
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    scrollbar-width: thin;
+}
+/* 矮屏（面板+输入栏放不下时）压一点高度，避免顶到屏幕上沿 */
+@media (max-height: 700px){
+    #chat-rp-panel{ max-height: 78vh !important; }
+}
+
+/* ===== red-packet card alignment (dsh) ===== */
+/* 新版 .msg-rp-card 是「独立整行、居中」的卡片：min-width:220px + margin:0 auto
+   （配 .msg-rp{align-self:center;justify-content:center}，在它自己那一行里居中）。
+   移植到本工程后卡片被塞进普通气泡内部，于是「卡片比气泡宽、向右溢出」：
+   我发的红包会顶出屏幕右侧，看起来就像「位于同排中间」而不是像普通气泡那样靠边。
+   这里把气泡当成红包卡的固定承载框：宽 220px、卡片铺满它、去掉居中。
+   结果：我发的红包和我的普通消息一样靠右，TA 发的和 TA 的消息一样靠左。 */
+body .message.rp-card{
+    width: 220px !important;
+    max-width: 78vw !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    box-sizing: border-box !important;
+}
+body .message.rp-card .msg-rp-card{
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* ===== call mini window (dsh) ===== */
+/* 用户要求（2026-10-05）：「小窗缩过之后只要这么长」+「要能位于顶部卡片之上，而不是被遮盖」。
+   ① 尺寸：原来 .call-mini 同时命中 left:50%（mochi-chat-core）与 right:14px（mochi-compat），
+      两个锚点同时生效 → 整条被拉长（宽屏上能拉到几百像素）。这里改成只锚右边、宽度按内容，
+      于是默认就是截图里那种紧凑胶囊（不拖动时也不会变长）。
+   ② 层级：聊天页头部/顶部卡片是 z-index:201 的固定层，而小窗原来只有 88 —— 提到 210 即可浮在它们之上
+      （JS 端会把 #call-mini 挂到 body 上，否则它被关在 .main-chat-area(z=200) 的层叠上下文里，提多高都没用）。 */
+#call-mini{
+    left: auto;
+    right: 14px;
+    /* 关键：宽度必须是「内容宽」，不能是 auto。
+       拖过小窗之后，JS 会把位置以**行内** style.left/top 写回元素（见 call-v2 的
+       mini.style.left = …／call-mini-pos），行内样式压过这里的 left:auto，
+       于是 left(行内) + right:14px 同时生效 → 盒子被拉成一条横带
+       （用户实报「小窗还是一长条」）。按 CSS 规则：width 不是 auto 时 right 不再参与拉伸，
+       所以这里给 max-content，无论有没有存过拖拽位置，小窗都是内容宽（再由 max-width 兜上限）。
+       没拖过时（无行内 left）行为不变：left:auto + right:14px + max-content 仍是右下角的紧凑小条。 */
+    width: max-content;
+    max-width: 70vw;
+    transform: none;
+    z-index: 210 !important;
+    /* dsh：小窗深色背景的右侧留白＝12px（用户要求：「把黑框右侧改为 12px 长度」）。
+       2px 那版太贴键，现在回到 12px；胶囊形状（99px 圆角）也随之恢复 ——
+       12px 已大于圆角端所需的 ~4.3px，28px 的圆键不会再被圆弧切到。
+       外发光保留收小后的档位（不在键右边拖出黑晕）。 */
+    padding: 8px 12px 8px 12px !important;
+    border-radius: 99px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15) !important;
+}
+
+/* 通话卡片那一层（#call-mask）同样要浮在顶部卡片之上：它是透明整屏层 + 内部卡片，
+   JS 会把 #call-mask / #call-mini 一起挂到 body 上（否则会被关在 .main-chat-area 的层叠上下文里，
+   提多高都没用）。 */
+/* 通话小窗的黑底（用户要求 2026-10-05）：「黑底短一点，在通话结束键旁边就可以停了」——
+   原来 padding 左右各 12px，深色胶囊在红色挂断键右边还多出 12px；现在右边收到 6px
+   （再小就会让 28px 的圆键顶出 99px 胶囊的圆角端），同时把外发光收一点，
+   于是深色背景到挂断键旁边就收住。 */
+#call-mask{ z-index: 208 !important; }
+/* 朋友圈封面上「点头像换头像 / 点昵称改昵称」两个入口已锁死（朋友圈身份现在全部跟随传讯，
+   真改了也会被立刻拉回）。事件在 js/avatar-sync.js 的 lockFeedEditEntries() 里于捕获阶段拦掉；
+   这里只去掉「可点」的鼠标指针提示，显示部分不变。 */
+#feed-my-av, #feed-my-name{ cursor: default !important; }
+/* 朋友圈动态作者头像已禁止跳转「XX 的全部朋友圈」（头像照旧显示，点了不跳页）。
+   事件在 js/avatar-sync.js 的 lockFeedAvatarJump() 里于捕获阶段拦掉；这里只去掉可点的鼠标指针提示。 */
+.feed-head-av{ cursor: default !important; }
+/* 朋友圈评论条可见性修正（本工程 markup 与新版错位导致的一处 bug）
+   本工程把「评论输入条 #feed-comment-bar + 输入框 + 发送 + 表情/图片入口」全部放在
+   #feed-comment-panel 里面；而 feed.js 的 showCommentBar() 是按新版结构写的：
+   它只把 #feed-comment-bar 取消隐藏，并**特意把 #feed-comment-panel 藏起来**
+   （新版里 panel 只装表情包选择器）→ 结果点了【评论】，输入框整个被父级 hidden 藏掉，
+   用户看不到也点不到＝「朋友圈没法评论」。
+   这里按「评论条可见 ⇒ 面板必须可见」放行；评论条藏起来时保持原行为（面板由 app 自己收）。
+   :has() 在 Chrome/Edge 105+ 可用；老内核由 js/feed-fixups.js 的兜底同步。 */
+#feed-comment-panel:has(#feed-comment-bar:not([hidden])){ display: block !important; }
+/* 兜底同步会给面板加这个类（老内核没有 :has() 时也放行） */
+#feed-comment-panel.feed-comment-open{ display: block !important; }
+/* 红包消息：除「领取 / 退回」外不留任何交互按键（用户要求 2026-10-05）
+   消息级按钮（回复/收藏/删除）由 core.js 画在 .message-content-wrapper > .message-meta-actions 里，
+   即红包气泡的**兄弟节点**（不在气泡内部）；redpacket.js 的 decorate() 会给外壳打 data-rp-card="1"。
+   这里按外壳把整排按钮收掉；卡片自己的「点＝领取 / 长按＝退回」手势不受影响。
+   JS 侧还有一层移除与事件拦截，见 js/rp-no-quote-fav.js。 */
+body .message-wrapper[data-rp-card="1"] .message-meta-actions,
+body .message-wrapper[data-rp-card="1"] .meta-action-btn,
+body .message-wrapper[data-rp-nofav="1"] .message-meta-actions,
+body .message-wrapper[data-rp-nofav="1"] .meta-action-btn{ display: none !important; }
+/* 批量收藏模式下红包不参与勾选 */
+body.batch-favorite-mode .message-wrapper[data-rp-card="1"] .batch-favorite-checkbox,
+body.batch-favorite-mode .message-wrapper[data-rp-nofav="1"] .batch-favorite-checkbox{ display: none !important; }
+body.batch-favorite-mode .message-wrapper[data-rp-card="1"],
+body.batch-favorite-mode .message-wrapper[data-rp-nofav="1"]{ cursor: default; }
+/* 朋友圈「贴纸」功能已删除（用户要求 2026-10-05）
+   入口：动态卡片上的贴纸按钮 .feed-act[data-sticker]、评论条上的 #feed-comment-sticker；
+   产物：贴纸选择卡 #feed-sticker-card（动态创建）、已贴上的 .feed-sticker（含评论贴纸）。
+   这里全部隐藏（重渲染也不会露头）；点击拦截与选择卡收起见 js/feed-fixups.js。
+   仅隐藏显示，已贴贴纸的数据仍留在 feed-posts 里，未做破坏性删除。 */
+.feed-act[data-sticker],
+#feed-comment-sticker,
+#feed-sticker-card,
+#feed-sticker-panel,
+.feed-sticker,
+.feed-sticker-bar{ display: none !important; }
+/* 「我的」页：独立整屏页（用户要求 2026-10-05）
+   要求：从主页底部「我的」直接打开，是**全新独立页面**，不依附传讯页。
+   做法：把 #page-me 放到 body 层（与 #img-view-mask 同级），这里给它整屏定位与电话框一致的底色；
+   显示/隐藏仍由 home-shell.js 的底部标签逻辑切换（其它 .page 一并收起）。 */
+#page-me{
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    /* 用户要求 2026-10-05：这里面的工具（收藏设置 / 对方主动来信 / 诊断）点开要能**直接看到**。
+       工具弹窗都在聊天层里，聊天层平时 200、打开铺满视口的浮层时被 layer-guard 抬到 205；
+       所以「我的」放在 204：盖得住桌面与聊天页（200/201），又低于弹窗层（205），弹窗不再被它遮住。 */
+    z-index: 204;
+    display: flex;
+    flex-direction: column;
+    background: var(--primary-bg, #f9f9f9);
+    color: var(--text-primary);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 14px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+}
+#page-me[hidden]{ display: none !important; }
+#page-me .settings-section{ margin-top: 6px; }
+#page-me .settings-item{ cursor: pointer; }
+/* 红包按钮的主题交互（用户要求 2026-10-05）
+   静止态仍按之前定的「黑白灰」口径（灰底 + 灰图标），**交互态跟随主题色**：
+   悬停 / 按下都把底色染成当前主题色（--accent-color）的淡色、图标取主题色，
+   并与输入栏其它按钮用同一套动作语言（hover 上浮微放大、active 缩回）。
+   注意：这些规则要压过 redpacket.js 运行时注入的同名规则，所以带 !important。 */
+body #redpacket-btn{
+    transition: var(--transition, all .25s cubic-bezier(.4, 0, .2, 1)) !important;
+}
+body #redpacket-btn:hover{
+    background: rgba(var(--accent-color-rgb), .16) !important;
+    color: var(--accent-color) !important;
+    transform: translateY(-1px) scale(1.07) !important;
+    filter: brightness(1.06);
+}
+body #redpacket-btn:active{
+    background: rgba(var(--accent-color-rgb), .26) !important;
+    color: var(--accent-color) !important;
+    transform: scale(.92) !important;
+}
+body #redpacket-btn svg{ transition: inherit; }
+/* 深色主题下把静止态也交给主题（浅灰底在白底主题里没问题，在深色里会刺眼） */
+html[data-theme="dark"] body #redpacket-btn{
+    background: rgba(255, 255, 255, .10) !important;
+    color: #cfcfcf !important;
+}
+html[data-theme="dark"] body #redpacket-btn:hover,
+html[data-theme="dark"] body #redpacket-btn:active{
+    background: rgba(var(--accent-color-rgb), .30) !important;
+    color: var(--accent-color) !important;
+}
+/* 传讯页顶部「格言」位移（2026-10-05 先下移 24px；2026-10-06 用户要求上移 24px → 回到 0）
+   用 transform 做**相对位移**：styles.css 里 .header-motto 的 top 在不同断点分别是 auto/5px/4px，
+   直接改 top 就得逐个断点对齐；translateY 不受这些影响，稳定位移。
+   注意：styles.css 的 :hover 会重写 transform（scale(1.01)），这里同步补一条，
+   避免鼠标悬停时格言「跳回原处」。 */
+.header-motto{
+    position: relative;
+    transform: translateY(0);
+}
+.header-motto:hover{
+    transform: translateY(0) scale(1.01);
+}
+/* 朋友圈封面下的「我」一栏：把头像放到最右边（用户要求 2026-10-05）
+   现状：mochi-compat.js 运行时注入的 .feed-me 是普通 flex 行（margin-top:-18px 压在封面下沿），
+   头像在最左、昵称在右。这里改成 row-reverse 并靠 start 排——反向轴上的 start 就是**右边**，
+   于是头像落在最右、昵称在它左边，并且不需要动 DOM 顺序（头像/昵称的点击行为不变）。
+   运行时注入的 <style> 比本文件晚，所以要 !important 才压得住。 */
+body .feed-me{
+    flex-direction: row-reverse !important;
+    justify-content: flex-start !important;
+}
+/* 朋友圈背景（封面）加高，把「我」的头像整行包含进去（用户要求 2026-10-05）
+   现状：运行时注入的 .feed-cover 只有 120px，而 .feed-me（头像 44px + 昵称）用 margin-top:-18px
+   只是「骑」在封面下沿上——头像有一多半露在背景外面。
+   这里把封面加高到 190px，并把这一行整体上提到封面内部（-70px）：
+   头像底边距封面下沿约 12px，昵称与头像同一行，两者都在背景之内。 */
+body .feed-cover{ height: 190px !important; }
+body .feed-me{ margin-top: -70px !important; position: relative; z-index: 2; }
+/* 朋友圈「背景」与「动态列表」之间留出 12px 空白（用户要求 2026-10-05）
+   量测现状：封面的视觉下沿（190px 那块背景）会越出 .feed-cover-wrap 的下边界 12px，
+   于是 wrap 自己的 margin-bottom(14px) 实际只在下沿之外留出 2px 可见空隙。
+   这里把 wrap 的下外边距加到 24px：24 - 12(封面越出部分) = 背景与动态之间正好 12px。
+   （不动封面自身/头像行的位置，头像仍在背景内、距背景下沿 12px。） */
+body .feed-cover-wrap{ margin-bottom: 24px !important; }
+/* 朋友圈整页跟随滚动（用户反馈 2026-10-05：向上滑动时「背景及以上」不跟着滚）
+   实测：本工程里 #page-feed 已经是滚动容器（overflow-y:auto、12 条动态时 scrollHeight≈2273），
+   背景与头部也都随页面滚动。这里把这件事**显式钉住**，防住三类会让上半部分不动的写法：
+     ① 头部/背景被写成 sticky / fixed（吸顶）→ 强制回到普通流内；
+     ② 动态列表自成一个滚动区 → 强制 overflow:visible / 不限高，交给整页滚；
+     ③ 页面本身不是滚动容器 → 强制 overflow-y:auto。
+   后续用户要求（2026-10-05）：「固定住朋友圈背景上面那一排按钮」
+   → .feed-head 改为吸顶（sticky top:0）并给不透明底色，滚动时按钮一直在顶部；
+     背景（封面）与动态仍随页面滚动。 */
+body #page-feed{
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch;
+}
+body #page-feed{
+    padding-top: 0 !important;   /* 椤堕儴涓嶇暀缂?*/
+}
+body #page-feed > .feed-head{
+    position: sticky !important;
+    top: 0 !important;
+    margin-top: 0 !important;    /* 椤堕儴涓嶇暀缂?*/
+    z-index: 99;                 /* 椤甸潰鍐呮渶楂樺眰锛氶〉闈㈣嚜韬槸 z-index:82 鐨勫眰鍙犱笂涓嬫枃锛?9 鏄畠鍐呴儴鐨勬渶澶у€硷紝
+                                    浠嶇劧浣庝簬椤甸潰澶栫殑娴眰锛堣瘎璁洪潰鏉?84銆佽缃脊绐?205 绛夛級 */
+    background: var(--primary-bg, #fff);
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+body #page-feed .feed-cover-wrap{ position: relative !important; }
+body #feed-list{ overflow: visible !important; max-height: none !important; }
+
+/* ===== 用户要求 2026-10-05：拨打页 / 来电页默认**垂直居中**，不要贴底 =====
+   贴底来自运行时注入的 #mochi-call-style（.call-mask 的 align-items:flex-end +
+   .call-inner 的 margin-bottom:calc(96px + 安全区)）。那条注入样式没有 !important，
+   这里用 !important 覆盖成居中；卡片仍可拖动（拖动会写 position:fixed，不受影响）。 */
+#call-mask { align-items: center !important; }
+#call-mask .call-inner { margin-bottom: 0 !important; }
+/* ===== 用户要求 2026-10-05：桌面下方贴底，不要悬空 =====
+   实测：桌面视图下聊天层 .main-chat-area 仍是 #page-phone 的 flex 兄弟，占了底部约 107px
+   （它只是 visibility:hidden，位置还在），于是桌面内容连底部导航一起被顶起来＝悬空。
+   这里在桌面视图下把它改成绝对定位满屏：不占布局空间；内容本身仍隐藏，只有白名单弹窗放行，
+   所以「我的」页里点设置/统计、桌面弹窗等行为都不受影响。 */
+body.view-home #page-phone > .main-chat-area {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    flex: 0 0 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+}
+/* ===== 用户要求 2026-10-05：聊天设置里的「修改梦角名称 / 修改我方名称」要直接能看到 =====
+   原因：这两颗按钮打开的是 #edit-modal，它内联写了 z-index:3000，但通配规则 .modal 上有一条
+   `z-index:2000 !important`——作者样式里的 !important 胜过内联的普通声明，于是它实际只有 2000，
+   与 #settings-modal 同层，而它在 DOM 里排在设置弹窗**前面**，就被设置弹窗盖住了。
+   这里用更高优先级的 !important 把它抬到设置弹窗之上。 */
+#edit-modal { z-index: 2400 !important; }
+/* ===== 用户要求 2026-10-06：桌面上的「卡片」左右各留 12px（不含应用图标区） =====
+   实测改前：卡片区（头像/打卡/今日情话+打卡天数）都是满宽 0 间距（498px 宽直接贴两边）。
+   这里给桌面页里除应用区以外的直接子块加 12px 左右外边距，并让宽度自动收缩；
+   .app-grid（应用图标）与装修提示保持原样。 */
+body.view-home .desk-page > *:not(.app-grid):not(.app):not(.desk-page-hint):not(.desk-page-add):not(.dots) {
+    margin-left: 12px !important;
+    margin-right: 12px !important;
+    width: auto !important;
+    max-width: calc(100% - 24px) !important;
+}
+/* ===== 用户要求 2026-10-06：聊天头部下方那一带不要再「空出一层」 =====
+   实测：
+   · home-shell.js 进聊天页时把头部改成 position:fixed，并给 .main-chat-area 写一次
+     paddingTop = 当时的头部高度（本次实测 179px）——这是头部遮住聊天区所需的最小让位；
+   · 但消息区 #chat-container 自身没有撑满剩下的高度（实测只有内容高 205px），
+     于是它上方就留下一条看着像「遮盖」的空白。
+   这里让消息区撑满可用高度、内容从顶部开始排：头部下方直接就是第一条消息，
+   消息多时依旧从底部继续往下排（不影响原有观感）。 */
+body.view-chat #page-phone > .main-chat-area > #chat-container {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    justify-content: flex-start !important;
+}
+/* ===== 用户要求 2026-10-06：朋友圈页「发动态 / 通知」两个按钮贴到最右侧 =====
+   标题行删掉后，.feed-head 是「左起排列」（没有 justify-content），两个按钮就紧跟返回键，
+   看着贴在左边。这里用 margin-left:auto 把「发动态」连同它后面的「通知」一起推到最右；
+   返回键仍在最左。 */
+body #page-feed > .feed-head > #feed-publish-btn {
+    margin-left: auto !important;
+}
+/* ===== 用户要求 2026-10-06：朋友圈「通知」点开后的面板要**垂直居中** =====
+   面板 #feed-notice-panel（.feed-panel）原本是运行时注入的贴底半框
+   （mochi-compat.js：position:fixed; bottom:0; left/right:0），这里改成居中卡片。 */
+#feed-notice-panel {
+    bottom: auto !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    left: 12px !important;
+    right: 12px !important;
+    border-radius: 18px !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .22) !important;
+    max-height: 80vh !important;
+    overflow: hidden auto !important;
+}
+/* ===== 用户要求 2026-10-06：桌面页面**锁死**，不可滑动 =====
+   桌面三页是 #desktop-pages 这个横向吸附滚动容器（desk-slider.js 靠原生滚动 + scrollLeft 翻页）。
+   这里把它的滚动与手势一起关掉：overflow 全隐藏 + touch-action:none + 取消 snap，
+   于是左右滑动 / 上下拖动都不会再动页面（点图标、点圆点翻页等「显式点击」不受影响）。 */
+body.view-home #desktop-pages {
+    overflow-x: hidden !important;
+    overflow-y: hidden !important;
+    touch-action: none !important;
+    scroll-snap-type: none !important;
+    overscroll-behavior: none !important;
+    -webkit-overflow-scrolling: auto !important;
+}
+/* ===== 用户反馈 2026-10-06：从传讯页回主页时，聊天页顶部头像 / 消息旁头像会「卡一下」才消失 =====
+   实测（mode 123）：走 showHome() 切换时，第一帧（+60ms）聊天层与头像就已经是 hidden，
+   DOM 层面没有残留；所以那条「卡一下」更像是过渡/重绘造成的视觉残留。
+   这里把聊天层的显隐与相关头像的过渡一并关掉：切换即时生效，不再有半透明/淡出的一帧。 */
+body.view-home #page-phone > .main-chat-area,
+body.view-chat #page-phone > .main-chat-area {
+    transition: none !important;
+}
+#partner-avatar, #my-avatar, #partner-avatar img, #my-avatar img,
+#chat-container [class*="avatar"], #chat-container [class*="avatar"] img {
+    transition: none !important;
+}
